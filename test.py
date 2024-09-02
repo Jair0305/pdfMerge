@@ -19,6 +19,7 @@ class App(tk.Frame):
         self.file_paths = []
         self.thumbnail_images = []
         self.image_items = []
+        self.delete_buttons = []
 
         # Canvas for displaying thumbnails
         self.canvas = tk.Canvas(self, bg="white", width=600, height=400)
@@ -61,11 +62,43 @@ class App(tk.Frame):
             img_id = self.canvas.create_image(x, y, anchor="nw", image=photo)
             self.image_items.append(img_id)
 
+            # Add a delete button next to the image
+            delete_button = tk.Button(self, text="X", command=lambda i=index: self.delete_item(i))
+            delete_button.place(x=x + 80, y=y)  # Position the button next to the image
+            self.delete_buttons.append(delete_button)
+
             # Bind events to make the image draggable
             self.canvas.tag_bind(img_id, "<ButtonPress-1>", self.on_start_drag)
             self.canvas.tag_bind(img_id, "<B1-Motion>", self.on_drag)
             self.canvas.tag_bind(img_id, "<ButtonRelease-1>", self.on_stop_drag)
 
+    def delete_item(self, index):
+        """Delete the selected item from the canvas and arrays."""
+        # Remove the image from the canvas
+        self.canvas.delete(self.image_items[index])
+
+        # Remove the delete button
+        self.delete_buttons[index].destroy()
+
+        # Remove from arrays
+        del self.file_paths[index]
+        del self.thumbnail_images[index]
+        del self.image_items[index]
+        del self.delete_buttons[index]
+
+        print(f'File at index {index} was deleted')
+        for i, file_path in enumerate(self.file_paths):
+            print(f'{i}: {file_path}')
+            
+        self.reassign_delete_commands()
+
+        # Update all positions after deletion
+        self.update_all_positions()
+    
+    def reassign_delete_commands(self):
+        for i, button in enumerate(self.delete_buttons):
+            button.config(command=lambda i=i: self.delete_item(i))
+            
     def on_start_drag(self, event):
         item = self.canvas.find_closest(event.x, event.y)[0]
         self.drag_data["item"] = item
@@ -102,6 +135,7 @@ class App(tk.Frame):
             self.file_paths.insert(new_index, self.file_paths.pop(old_index))
             self.thumbnail_images.insert(new_index, self.thumbnail_images.pop(old_index))
             self.image_items.insert(new_index, self.image_items.pop(old_index))
+            self.delete_buttons.insert(new_index, self.delete_buttons.pop(old_index))
 
         # Reset positions
         self.update_all_positions()
@@ -124,6 +158,9 @@ class App(tk.Frame):
         for i, item in enumerate(self.image_items):
             x, y = self.get_grid_position(i)
             self.canvas.coords(item, x, y)
+
+            # Update delete button position
+            self.delete_buttons[i].place(x=x + 80, y=y)
 
     def merge_files(self):
         if self.file_paths:
