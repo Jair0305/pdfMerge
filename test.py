@@ -4,10 +4,11 @@ from PyPDF2 import PdfReader, PdfWriter
 from pdf2image import convert_from_path
 from PIL import Image, ImageTk
 
+
 class App(tk.Frame):
     def __init__(self, master):
         super().__init__(master)
-        self.pack()
+        self.pack(fill=tk.BOTH, expand=True)
 
         self.open_file_button = tk.Button(self, text="Open File", command=self.open_file, width=20, height=2)
         self.open_file_button.pack()
@@ -17,13 +18,19 @@ class App(tk.Frame):
 
         self.file_paths = []
         self.thumbnail_images = []
-        self.image_positions = []
+        self.image_items = []
 
         # Canvas for displaying thumbnails
-        self.canvas = tk.Canvas(self, bg="white")
+        self.canvas = tk.Canvas(self, bg="white", width=600, height=400)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
         self.drag_data = {"x": 0, "y": 0, "item": None, "index": None}
+
+        # Grid layout
+        self.rows = 2
+        self.cols = 5
+        self.cell_width = 110
+        self.cell_height = 160
 
     def open_file(self):
         file_paths = filedialog.askopenfilenames(filetypes=[("PDF files", "*.pdf")])
@@ -43,13 +50,16 @@ class App(tk.Frame):
             # Store reference to avoid garbage collection
             self.thumbnail_images.append(photo)
 
-            # Calculate the position based on the number of images
-            position_x = 10 + (len(self.thumbnail_images) - 1) * 110
-            position_y = 10
-            self.image_positions.append((position_x, position_y))
+            # Calculate the position based on the grid layout
+            index = len(self.thumbnail_images) - 1
+            row = index // self.cols
+            col = index % self.cols
+            x = col * self.cell_width + 5
+            y = row * self.cell_height + 5
 
             # Add the image to the canvas at the calculated position
-            img_id = self.canvas.create_image(position_x, position_y, anchor="nw", image=photo)
+            img_id = self.canvas.create_image(x, y, anchor="nw", image=photo)
+            self.image_items.append(img_id)
 
             # Bind events to make the image draggable
             self.canvas.tag_bind(img_id, "<ButtonPress-1>", self.on_start_drag)
@@ -57,69 +67,62 @@ class App(tk.Frame):
             self.canvas.tag_bind(img_id, "<ButtonRelease-1>", self.on_stop_drag)
 
     def on_start_drag(self, event):
-        """Save the item and its location when the drag starts."""
         item = self.canvas.find_closest(event.x, event.y)[0]
         self.drag_data["item"] = item
         self.drag_data["x"] = event.x
         self.drag_data["y"] = event.y
-
-        # Find the index of the item in the array
-        self.drag_data["index"] = self.find_image_index(event.x, event.y)
-
-    def find_image_index(self, x, y):
-        """Find the index of the image based on its position."""
-        for i, (pos_x, pos_y) in enumerate(self.image_positions):
-            if pos_x <= x <= pos_x + 100 and pos_y <= y <= pos_y + 150:  # Assuming image size 100x150
-                return i
-        return None
+        self.drag_data["index"] = self.image_items.index(item)
 
     def on_drag(self, event):
-        """Handle the dragging of the item."""
         dx = event.x - self.drag_data["x"]
         dy = event.y - self.drag_data["y"]
         self.canvas.move(self.drag_data["item"], dx, dy)
         self.drag_data["x"] = event.x
         self.drag_data["y"] = event.y
 
+        # Update positions in real-time
+        self.update_positions_realtime()
+
+    def update_positions_realtime(self):
+        dragged_index = self.drag_data["index"]
+        dragged_coords = self.canvas.coords(self.drag_data["item"])
+
+        for i, item in enumerate(self.image_items):
+            if i != dragged_index:
+                x, y = self.get_grid_position(i if i < dragged_index else i - 1)
+                self.canvas.coords(item, x, y)
+
     def on_stop_drag(self, event):
-        """Handle the stop of dragging and swap positions if necessary."""
-        new_index = self.find_image_index(event.x, event.y)
-        if new_index is not None and new_index != self.drag_data["index"]:
-            # Swap the positions in the canvas
-            self.swap_positions(self.drag_data["index"], new_index)
+        dragged_item = self.drag_data["item"]
+        old_index = self.drag_data["index"]
+        new_index = self.get_drop_index(event.x, event.y)
 
-            # Swap the positions in the array
-            self.file_paths[self.drag_data["index"]], self.file_paths[new_index] = (
-                self.file_paths[new_index],
-                self.file_paths[self.drag_data["index"]],
-            )
+        if new_index is not None and new_index != old_index:
+            # Update data structures
+            self.file_paths.insert(new_index, self.file_paths.pop(old_index))
+            self.thumbnail_images.insert(new_index, self.thumbnail_images.pop(old_index))
+            self.image_items.insert(new_index, self.image_items.pop(old_index))
 
-            self.thumbnail_images[self.drag_data["index"]], self.thumbnail_images[new_index] = (
-                self.thumbnail_images[new_index],
-                self.thumbnail_images[self.drag_data["index"]],
-            )
+        # Reset positions
+        self.update_all_positions()
 
-        # Reset the drag data
-        self.drag_data["item"] = None
-        self.drag_data["x"] = 0
-        self.drag_data["y"] = 0
-        self.drag_data["index"] = None
+        # Reset drag data
+        self.drag_data = {"x": 0, "y": 0, "item": None, "index": None}
 
-        # Update canvas positions for all images after the swap
-        self.update_canvas_positions()
+    def get_drop_index(self, x, y):
+        row = int(y // self.cell_height)
+        col = int(x // self.cell_width)
+        index = row * self.cols + col
+        return min(index, len(self.image_items) - 1)
 
-    def swap_positions(self, index1, index2):
-        """Swap the positions of two images in the canvas and update their positions."""
-        # Swap positions in the list
-        self.image_positions[index1], self.image_positions[index2] = (
-            self.image_positions[index2],
-            self.image_positions[index1],
-        )
+    def get_grid_position(self, index):
+        row = index // self.cols
+        col = index % self.cols
+        return col * self.cell_width + 5, row * self.cell_height + 5
 
-    def update_canvas_positions(self):
-        """Update the positions of all images in the canvas."""
-        for i, (x, y) in enumerate(self.image_positions):
-            item = self.canvas.find_closest(x + 50, y + 75)[0]
+    def update_all_positions(self):
+        for i, item in enumerate(self.image_items):
+            x, y = self.get_grid_position(i)
             self.canvas.coords(item, x, y)
 
     def merge_files(self):
@@ -142,10 +145,11 @@ class App(tk.Frame):
                 print(f'The files: {file_paths} were merged into {output_file} as {output_file.name}')
         merger.close()
 
+
 root = tk.Tk()
 
-window_width = 700
-window_height = 400
+window_width = 800
+window_height = 600
 
 screen_width = root.winfo_screenwidth()
 screen_height = root.winfo_screenheight()
